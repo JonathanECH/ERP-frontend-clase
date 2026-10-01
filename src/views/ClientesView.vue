@@ -1,79 +1,98 @@
 <script setup>
-import { ref, computed } from 'vue'
-import TarjetaKPI from '../components/TarjetaKPI.vue'
+import { ref, computed, onMounted } from 'vue';
+import TarjetaKPI from '../components/TarjetaKPI.vue';
+import { contactoService } from '@/services/erpApi';
+
 // ============ ESTADO REACTIVO ============
-// ref() hace que Vue "observe" estas variables y actualice la vista cuando cambian
-const clientes = ref([
-    {
-        id: 1, nombre: 'Distribuidora del Norte S.A.', rfc: 'DNO900101ABC', email:
-            'ventas@norte.mx', telefono: '555-1234', tipo: 'cliente', saldo: 15000
-    },
-    {
-        id: 2, nombre: 'Papelería Central', rfc: 'PCE850515XYZ', email:
-            'contacto@central.mx', telefono: '555-5678', tipo: 'proveedor', saldo: -3200
-    },
-    {
-        id: 3, nombre: 'Servicios Técnicos López', rfc: 'STL920320DEF', email:
-            'lopez@servicios.mx', telefono: '555-9012', tipo: 'cliente', saldo: 8500
-    }
-])
-const busqueda = ref('')
-const dialog = ref(false)
-const editando = ref(false)
+const clientes = ref([]);
+const cargando = ref(false);
+const error = ref(null);
+const busqueda = ref('');
+const dialog = ref(false);
+const editando = ref(false);
 const formulario = ref({
-    id: 0, nombre: '', rfc: '', email: '', telefono: '', tipo: 'cliente', saldo: 0
-})
+  id: 0, nombre: '', rfc: '', email: '', telefono: '', tipo: 'Cliente', saldo: 0
+});
+
 // ============ VALIDACIONES ============
-// Cada función recibe el valor y retorna true (válido) o un mensaje de error
 const reglas = {
-    requerido: (v) => !!v || 'Campo obligatorio',
-    rfc: (v) => /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(v) || 'RFC inválido (ej: DNO900101ABC) ',
-email: (v) => /.+@.+\..+/.test(v) || 'Email inválido'
+  requerido: (v) => !!v || 'Campo obligatorio',
+  rfc: (v) => !!v || 'RFC obligatorio',
+  email: (v) => !v || /.+@.+\..+/.test(v) || 'Email inválido'
+};
+
+// ============ CARGA ASÍNCRONA DESDE MYSQL ============
+async function cargarClientes() {
+  cargando.value = true;
+  error.value = null;
+  try {
+    const respuesta = await contactoService.getAll();
+    clientes.value = respuesta.data.datos;
+  } catch (err) {
+    error.value = 'No se pudieron cargar los contactos del servidor MySQL.';
+  } finally {
+    cargando.value = false;
+  }
 }
+
 // ============ COMPUTED ============
-// computed() recalcula automáticamente cuando cambian sus dependencias
 const clientesFiltrados = computed(() => {
-    const termino = busqueda.value.toLowerCase()
-    return clientes.value.filter(c =>
-        c.nombre.toLowerCase().includes(termino) ||
-        c.rfc.toLowerCase().includes(termino)
-    )
-})
-const totalClientes = computed(() => clientes.value.filter(c => c.tipo ===
-    'cliente').length)
-const totalProveedores = computed(() => clientes.value.filter(c => c.tipo ===
-    'proveedor').length)
-const saldoNeto = computed(() => clientes.value.reduce((acc, c) => acc + c.saldo,
-    0))
+  const termino = busqueda.value.toLowerCase();
+  return clientes.value.filter(c =>
+    (c.nombre && c.nombre.toLowerCase().includes(termino)) ||
+    (c.rfc && c.rfc.toLowerCase().includes(termino))
+  );
+});
+
+const totalClientes = computed(() => clientes.value.filter(c => c.tipo === 'Cliente').length);
+const totalProveedores = computed(() => clientes.value.filter(c => c.tipo === 'Proveedor').length);
+const saldoNeto = computed(() => clientes.value.reduce((acc, c) => acc + Number(c.saldo || 0), 0));
+
 // ============ MÉTODOS ============
 const abrirNuevo = () => {
-    editando.value = false
-    formulario.value = {
-        id: 0, nombre: '', rfc: '', email: '', telefono: '', tipo:
-            'cliente', saldo: 0
-    }
-    dialog.value = true
-}
+  editando.value = false;
+  formulario.value = { id: 0, nombre: '', rfc: '', email: '', telefono: '', tipo: 'Cliente', saldo: 0 };
+  dialog.value = true;
+};
+
 const abrirEditar = (cliente) => {
-    editando.value = true
-    formulario.value = { ...cliente }  // Copia para no modificar el original
-    dialog.value = true
-}
-const guardar = () => {
+  editando.value = true;
+  formulario.value = { ...cliente };
+  dialog.value = true;
+};
+
+const guardar = async () => {
+  cargando.value = true;
+  try {
     if (editando.value) {
-        const idx = clientes.value.findIndex(c => c.id === formulario.value.id)
-        if (idx >= 0) clientes.value[idx] = { ...formulario.value }
+      await contactoService.update(formulario.value.id, formulario.value);
     } else {
-        const nuevoId = Math.max(0, ...clientes.value.map(c => c.id)) + 1
-        clientes.value.push({ ...formulario.value, id: nuevoId })
+      await contactoService.create(formulario.value);
     }
-    dialog.value = false
-}
-const eliminar = (id) => {
-    if (confirm('¿Eliminar este registro?')) {
-        clientes.value = clientes.value.filter(c => c.id !== id)
+    await cargarClientes();
+    dialog.value = false;
+  } catch (err) {
+    alert(err.response?.data?.mensaje || 'Error al guardar el contacto en MySQL');
+  } finally {
+    cargando.value = false;
+  }
+};
+
+const eliminar = async (id) => {
+  if (confirm('¿Eliminar este registro de la base de datos?')) {
+    cargando.value = true;
+    try {
+      await contactoService.delete(id);
+      await cargarClientes();
+    } catch (err) {
+      alert('Error al eliminar contacto');
+    } finally {
+      cargando.value = false;
     }
-}
+  }
+};
+
+onMounted(cargarClientes);
 </script>
 <template>
     <div>
@@ -114,14 +133,14 @@ const eliminar = (id) => {
             ]" :items="clientesFiltrados" :items-per-page="5">
                 <!-- Slot personalizado para columna tipo -->
                 <template v-slot:item.tipo="{ item }">
-                    <v-chip :color="item.tipo === 'cliente' ? 'primary' : 'secondary'" size="small">
-                        {{ item.tipo === 'cliente' ? 'Cliente' : 'Proveedor' }}
+                    <v-chip :color="item.tipo?.toLowerCase() === 'cliente' ? 'primary' : 'secondary'" size="small">
+                        {{ item.tipo }}
                     </v-chip>
                 </template>
                 <!-- Slot personalizado para columna saldo -->
                 <template v-slot:item.saldo="{ item }">
-                    <span :class="item.saldo >= 0 ? 'text-success' : 'text-error'">
-                        ${{ item.saldo.toLocaleString() }}
+                    <span :class="(item.saldo || 0) >= 0 ? 'text-success' : 'text-error'">
+                        ${{ Number(item.saldo || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
                     </span>
                 </template>
                 <!-- Slot personalizado para acciones -->

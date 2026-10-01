@@ -12,4 +12,13 @@ export const movimientoService = {
   getResumen: () => api.get('/resumen')
 };
 
+export const contactoService = {
+  getAll: () => api.get('/contactos'),
+  getOne: (id) => api.get(`/contactos/${id}`),
+  create: (datos) => api.post('/contactos', datos),
+  update: (id, datos) => api.put(`/contactos/${id}`, datos),
+  delete: (id) => api.delete(`/contactos/${id}`)
+};
+
 export default api;
+
